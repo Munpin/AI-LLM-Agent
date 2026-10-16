@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,9 +10,6 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
-
-# 💡 환경 변수에서 API 키를 가져오거나, 코드에 직접 넣을 수 있습니다.
-# os.environ["GOOGLE_API_KEY"] = "여러분의_실제_API_키"
 
 app = FastAPI()
 
@@ -35,6 +31,7 @@ def get_article_text(url: str) -> str:
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
+        # 콜랩 예제에 명시된 특정 영역 추출 로직
         article = soup.find('article', class_='story-news article')
         if article: return article.get_text(strip=True)
         
@@ -50,18 +47,25 @@ def get_article_text(url: str) -> str:
         return f"URL을 가져오는 중 오류 발생: {e}"
 
 def get_search_context(query: str) -> str:
+    # 1. DuckDuckGo API wrapper (한국지역, 최근 일주일)
     wrapper = DuckDuckGoSearchAPIWrapper(region="kr-kr", time="w")
+    
+    # 2. DuckDuckGoSearchResults (뉴스 소스)
     search = DuckDuckGoSearchResults(
         api_wrapper=wrapper, 
         source="news", 
         results_separator=';\n'
     )
     
+    # 검색 실행 (에러 방지를 위해 try-except 추가)
     try:
+        # 특정 사이트(ytn.co.kr)를 명시하거나 질문 자체를 검색
+        # ytn 검색을 원할 경우 query 앞에 "site:ytn.co.kr "를 붙일 수 있습니다.
         docs = search.invoke(query)
     except Exception as e:
         return "검색 중 오류가 발생했습니다."
     
+    # 3. 링크 추출 및 스크래핑
     links = []
     if docs:
         for doc in docs.split(";\n"):
@@ -70,8 +74,10 @@ def get_search_context(query: str) -> str:
                 links.append(link)
     
     articles = []
+    # 토큰 제한을 막기 위해 상위 2개의 기사만 스크래핑
     for link in links[:2]:
         text = get_article_text(link)
+        # 내용이 너무 길면 자름
         articles.append(f"[출처: {link}]\n{text[:1500]}")
     
     return "\n\n".join(articles) if articles else "관련 기사를 찾을 수 없습니다."
@@ -79,12 +85,8 @@ def get_search_context(query: str) -> str:
 @app.post("/api/chat")
 def chat_with_bot(req: ChatRequest):
     try:
-        # 💡 1. 올바른 모델명(gemini-1.5-flash)으로 수정
-        # API 키가 환경 변수에 없다면 google_api_key="키값"을 직접 전달할 수도 있습니다.
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash", 
-            temperature=0.2
-        )
+        # LLM 초기화
+        llm = ChatGoogleGenerativeAI(model="gemini-3.8-flash", temperature=0.2)
         
         # LCEL 프롬프트 설정
         prompt = ChatPromptTemplate.from_messages([
@@ -99,20 +101,12 @@ def chat_with_bot(req: ChatRequest):
         # 웹 스크래핑을 통한 컨텍스트 수집
         context = get_search_context(req.message)
         
-        # 💡 2. 히스토리 역할(Role) 변환 (user/assistant -> human/ai)
+        # 메모리(히스토리) 포맷팅
         formatted_history = []
         for h in req.history:
-            role = h.get("role", "user")
-            content = h.get("content", "")
+            formatted_history.append((h["role"], h["content"]))
             
-            if role in ["user", "human"]:
-                formatted_history.append(("human", content))
-            elif role in ["assistant", "ai"]:
-                formatted_history.append(("ai", content))
-            else:
-                formatted_history.append(("human", content))
-                
-        # 결과 생성
+        # 결과 생성 (에러가 발생하기 가장 쉬운 구간)
         result = chain.invoke({
             "context": context,
             "messages": formatted_history,
@@ -122,4 +116,5 @@ def chat_with_bot(req: ChatRequest):
         return {"reply": result}
         
     except Exception as e:
+        # 500 에러 대신 200 상태 코드로 상세 에러 메시지를 프론트로 반환
         return {"reply": f"⚠️ 서버 처리 중 오류가 발생했습니다: {str(e)}"}
