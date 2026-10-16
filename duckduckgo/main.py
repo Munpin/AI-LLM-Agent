@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict
 import requests
 from bs4 import BeautifulSoup
+import ddgs
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
