@@ -18,7 +18,6 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.callbacks import AsyncIteratorCallbackHandler
 
 # Supabase Client
 from supabase.client import Client, create_client
@@ -34,7 +33,7 @@ logger = logging.getLogger("rag_server")
 app = FastAPI(
     title="City Policy AI Assistant API",
     description="RAG Engine with Query Augmentation powered by Google Gemini and Supabase",
-    version="1.0.0"
+    version="1.0.1"
 )
 
 # CORS middleware enabling interaction from frontend clients
@@ -227,7 +226,6 @@ async def chat_stream(request: QueryRequest):
             ("human", "{question}")
         ])
 
-        # Model used for Fast query augmentation (Gemini 1.5 Flash / 2.5 Flash)
         augmentation_llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
             temperature=0.0,
@@ -277,35 +275,28 @@ async def chat_stream(request: QueryRequest):
             ("human", "{question}")
         ])
 
-        # Setup streaming handler
-        callback_handler = AsyncIteratorCallbackHandler()
-
-        # Streaming LLM Engine setup
         streaming_llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
             temperature=0.2,
             streaming=True,
-            callbacks=[callback_handler],
             google_api_key=GOOGLE_API_KEY
         )
 
+        rag_chain = rag_prompt | streaming_llm | StrOutputParser()
+
         async def generate_response_stream() -> AsyncGenerator[str, None]:
-            """Async generator driving real-time response streaming."""
-            # Run chain in background task to feed queue
-            formatted_rag_prompt = await rag_prompt.ainvoke({
-                "context": context_text,
-                "chat_history": formatted_history,
-                "question": request.query
-            })
-
-            # Fire generation asynchronously
-            task = streaming_llm.agenerate([formatted_rag_prompt.to_messages()])
-
-            # Yield chunks as they arrive from handler queue
-            async for token in callback_handler.aiter():
-                yield token
-
-            await task  # ensure clean task completion
+            """Async generator driving real-time response streaming using native astream."""
+            try:
+                async for chunk in rag_chain.astream({
+                    "context": context_text,
+                    "chat_history": formatted_history,
+                    "question": request.query
+                }):
+                    if chunk:
+                        yield chunk
+            except Exception as stream_err:
+                logger.error(f"Streaming error: {str(stream_err)}")
+                yield f"\n[오류 발생]: {str(stream_err)}"
 
         return StreamingResponse(generate_response_stream(), media_type="text/event-stream")
 
@@ -319,6 +310,5 @@ async def chat_stream(request: QueryRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Local debugging entrypoint
     port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
