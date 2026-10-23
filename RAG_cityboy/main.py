@@ -105,11 +105,17 @@ async def health_check():
 @app.post("/api/extract-text")
 async def extract_pdf_text(file: UploadFile = File(...)):
     """PDF 파일 선택 시 텍스트를 추출하여 미리보기용으로 반환하는 엔드포인트"""
-    if not file.filename.endswith(".pdf"):
+    logger.info(f"요청 수신됨: /api/extract-text, 파일명: {file.filename}")
+    
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        logger.warning(f"잘못된 파일 형식 요청: {file.filename}")
         raise HTTPException(status_code=400, detail="INVALID_FILE_TYPE: PDF 파일만 업로드할 수 있습니다.")
     
     try:
         pdf_bytes = await file.read()
+        if not pdf_bytes:
+            raise HTTPException(status_code=400, detail="EMPTY_FILE: 업로드된 파일이 비어 있습니다.")
+            
         pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
         extracted_text = ""
         
@@ -126,7 +132,7 @@ async def extract_pdf_text(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"PDF 텍스트 추출 중 오류: {str(e)}")
+        logger.error(f"PDF 텍스트 추출 중 상세 오류: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"PDF_PROCESSING_ERROR: PDF를 읽는 도중 서버 오류가 발생했습니다 ({str(e)})")
 
 
