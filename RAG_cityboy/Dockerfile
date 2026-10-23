@@ -1,42 +1,21 @@
-Use official python slim image for lightweight deployment
-
+# 1. 파이썬 경량 베이스 이미지 사용 (FROM 명령어 사용)
 FROM python:3.11-slim
 
-Prevent Python from writing pyc files and enable unbuffered output for Cloud Run logs
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-Set working directory inside container
-
+# 2. 작업 디렉토리 설정
 WORKDIR /app
 
-Install system build dependencies required for C extensions if needed
+# 3. 시스템 패키지 설치 (필요시)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y --no-install-recommends 
-
-build-essential 
-
-curl 
-
-&& rm -rf /var/lib/apt/lists/*
-
-Copy dependency definition file
-
+# 4. 의존성 파일 복사 및 패키지 설치
 COPY requirements.txt .
-
-Install dependencies without cache to minimize container layer size
-
 RUN pip install --no-cache-dir -r requirements.txt
 
-Copy application source code
+# 5. 소스 코드 복사
+COPY . .
 
-COPY . /app
-
-Expose default Cloud Run port
-
-EXPOSE 8080
-
-Run FastAPI app with Uvicorn server bound to 0.0.0.0:${PORT}
-
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# 6. Cloud Run 환경 변수 PORT 지원 및 Gunicorn/Uvicorn 실행 설정
+# Cloud Run은 환경 변수 PORT(기본 8080)로 트래픽을 전달합니다.
+CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
