@@ -1,0 +1,21 @@
+# ---- 웹 서버 ----
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+pydantic>=2.6,<3.0
+
+# ---- LangChain 0.3 계열 (MultiQueryRetriever, hub 가 langchain 패키지에 포함된 버전) ----
+langchain>=0.3.20,<0.4
+langchain-core>=0.3.40,<0.4
+langchain-community>=0.3.20,<0.4
+langchain-text-splitters>=0.3.6,<0.4
+langsmith>=0.3,<1.0          # 프롬프트 허브(hub.pull) 클라이언트
+
+# ---- Google AI (Gemini + 임베딩) ----
+langchain-google-genai>=2.1,<3.0
+
+# ---- 벡터 DB ----
+chromadb>=1.0,<2.0
+langchain-chroma>=0.2.3,<0.3
+
+# ---- PDF 처리 ----
+pypdf>=4.2
