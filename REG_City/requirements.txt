@@ -1,0 +1,19 @@
+# ===== 웹 서버 =====
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+
+# ===== PDF 텍스트 추출 =====
+pypdf>=5.0.0
+
+# ===== LangChain (체인 / 프롬프트 / 텍스트 분할) =====
+langchain-core>=0.3.0
+langchain-text-splitters>=0.3.0
+langchain-community>=0.3.0      # SupabaseVectorStore
+
+# ===== 모델 =====
+langchain-openai>=0.2.0         # OpenAI 임베딩 (text-embedding-3-small)
+langchain-google-genai>=2.0.0   # Gemini 채팅 모델
+
+# ===== 벡터 DB =====
+supabase>=2.7.0
