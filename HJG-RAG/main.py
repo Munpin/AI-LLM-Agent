@@ -32,7 +32,7 @@
 
 [환경 변수]
   GOOGLE_API_KEY       (필수) Google AI Studio API 키
-  EMBEDDING_MODEL      (선택) 기본값 models/text-embedding-004
+  EMBEDDING_MODEL      (선택) 기본값 models/gemini-embedding-001
   CHAT_MODEL           (선택) 기본값 gemini-2.5-flash
   CHROMA_DIR           (선택) 기본값 /tmp/chroma_db
   SERVER_ACCESS_TOKEN  (선택) 설정 시 요청 헤더 X-Access-Token 이 일치해야만 허용
@@ -74,7 +74,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # 1. 설정값 (모두 환경 변수에서 읽음 → 코드에 키를 하드코딩하지 않음)
 # ==============================================================================
 GOOGLE_API_KEY: str = os.environ.get("GOOGLE_API_KEY", "")
-EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "models/text-embedding-004")
+# text-embedding-004 는 지원 종료되어 404 가 나므로 gemini-embedding-001 을 기본값으로 사용
+EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "models/gemini-embedding-001")
 CHAT_MODEL: str = os.environ.get("CHAT_MODEL", "gemini-2.5-flash")
 CHROMA_DIR: str = os.environ.get("CHROMA_DIR", "/tmp/chroma_db")
 SERVER_ACCESS_TOKEN: str = os.environ.get("SERVER_ACCESS_TOKEN", "")
@@ -136,7 +137,7 @@ def require_api_key() -> None:
 
 
 def get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    """구글 임베딩 모델(models/text-embedding-004)을 한 번만 생성해 재사용합니다."""
+    """구글 임베딩 모델(EMBEDDING_MODEL)을 한 번만 생성해 재사용합니다."""
     global _embeddings
     require_api_key()
     with _model_lock:
