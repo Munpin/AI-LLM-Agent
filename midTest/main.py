@@ -157,4 +157,168 @@ def build_rag_chain(mq_retriever):
     RunnablePassthrough.assign으로 입력 dict를 그대로 통과시키며 단계별 결과를 누적:
     {question} → +expanded_question → +generated_queries → +docs → +context → +answer
     """
-    expansion_chain = EXPANSION_PROMPT | state.llm |
+    expansion_chain = EXPANSION_PROMPT | state.llm | StrOutputParser()
+
+    return (
+        RunnablePassthrough.assign(expanded_question=expansion_chain)
+        | RunnablePassthrough.assign(
+            generated_queries=itemgetter("expanded_question")
+            | RunnableLambda(lambda q: mq_retriever.llm_chain.invoke({"question": q}))
+        )
+        | RunnablePassthrough.assign(docs=itemgetter("expanded_question") | mq_retriever)
+        | RunnablePassthrough.assign(context=lambda x: format_docs(x["docs"]))
+        | RunnablePassthrough.assign(answer=ANSWER_PROMPT | state.llm | StrOutputParser())
+    )
+
+
+@app.get("/")
+@app.get("/health")
+def health():
+    ready = True
+    error = None
+    try:
+        state.init()
+    except Exception as e:
+        ready = False
+        error = str(e)
+    return {
+        "status": "ok" if ready else "degraded",
+        "api_key_configured": bool(GOOGLE_API_KEY),
+        "vector_count": state.vector_count(),
+        "documents": state.documents,
+        "error": error,
+    }
+
+
+@app.get("/config")
+def config():
+    return {
+        "system_role": SYSTEM_ROLE,
+        "vector_db": {
+            "type": "Chroma DB",
+            "collection": COLLECTION_NAME,
+            "persist_directory": CHROMA_DIR,
+            "distance": "cosine",
+        },
+        "embedding": {"provider": "Google Generative AI", "model": EMBEDDING_MODEL},
+        "llm": {"provider": "Google Gemini", "model": LLM_MODEL, "temperature": LLM_TEMPERATURE},
+        "document_loader": {"type": "PyPDFLoader"},
+        "text_splitter": {
+            "type": "RecursiveCharacterTextSplitter",
+            "chunk_size": CHUNK_SIZE,
+            "chunk_overlap": CHUNK_OVERLAP,
+        },
+        "multi_query_retriever": {
+            "type": "MultiQueryRetriever.from_llm",
+            "num_queries": NUM_QUERIES,
+            "include_original": True,
+            "top_k_per_query": TOP_K,
+            "description": "LLM이 확장 질의를 서로 다른 관점의 질문으로 재작성 → 각 질문으로 검색 → 결과 문서 합집합(중복 제거)",
+        },
+        "query_expansion": {
+            "type": "RunnablePassthrough.assign",
+            "description": "원 질문을 유지한 채 도시계획 용어·동의어를 보강한 expanded_question을 추가하고, "
+                           "이후 단계(다중 질문 → 검색 → context → answer)를 누적 전달",
+        },
+    }
+
+
+@app.post("/upload")
+def upload(req: UploadRequest):
+    try:
+        state.init()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not req.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF 파일만 업로드할 수 있습니다.")
+
+    try:
+        pdf_bytes = base64.b64decode(req.data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="base64 디코딩 실패")
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        pages = PyPDFLoader(tmp_path).load()
+        if not pages:
+            raise HTTPException(status_code=400, detail="PDF에서 텍스트를 추출하지 못했습니다.")
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+        )
+        chunks = splitter.split_documents(pages)
+        chunks = [c for c in chunks if c.page_content.strip()]
+        for c in chunks:
+            c.metadata["source_name"] = req.filename
+
+        with state.lock:
+            ids = [str(uuid.uuid4()) for _ in chunks]
+            state.vectorstore.add_documents(chunks, ids=ids)
+            info = {"filename": req.filename, "pages": len(pages), "chunks": len(chunks)}
+            state.documents.append(info)
+
+        logger.info("업로드 완료: %s", info)
+        return {"success": True, **info, "vector_count": state.vector_count()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("업로드 실패")
+        raise HTTPException(status_code=500, detail=f"PDF 처리 실패: {e}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@app.post("/query")
+def query(req: QueryRequest):
+    question = req.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="질문이 비어 있습니다.")
+    try:
+        state.init()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if state.vector_count() == 0:
+        raise HTTPException(status_code=400, detail="벡터 DB가 비어 있습니다. 먼저 PDF를 업로드하세요.")
+
+    try:
+        mq_retriever = build_multi_query_retriever()
+        result = build_rag_chain(mq_retriever).invoke({"question": question})
+
+        sources = [
+            {
+                "source": d.metadata.get("source_name", "unknown"),
+                "page": d.metadata.get("page", 0) + 1,
+                "snippet": d.page_content[:200].replace("\n", " "),
+            }
+            for d in result["docs"]
+        ]
+        return {
+            "question": question,
+            "expanded_question": result["expanded_question"],
+            "generated_queries": [q for q in result["generated_queries"] if q.strip()],
+            "answer": result["answer"],
+            "sources": sources,
+        }
+    except Exception as e:
+        logger.exception("질의 실패")
+        raise HTTPException(status_code=500, detail=f"질의 처리 실패: {e}")
+
+
+@app.post("/reset")
+def reset():
+    try:
+        state.init()
+        with state.lock:
+            state.vectorstore.delete_collection()
+            state.vectorstore = None
+            state.documents = []
+            state.init()
+        return {"success": True, "vector_count": state.vector_count()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
