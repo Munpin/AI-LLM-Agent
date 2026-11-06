@@ -1,0 +1,19 @@
+# ============================================================================
+# Advanced RAG Server Dependencies (FAISS + Multi-Query + Hybrid Search + RRF)
+# ============================================================================
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-multipart==0.0.20
+
+# Vector Search & Sparse Retrieval (FAISS + BM25)
+faiss-cpu==1.9.0.post1
+rank-bm25==0.2.2
+numpy==1.26.4
+
+# PDF Parsing & Text Processing
+pypdf==5.1.0
+
+# LLM & Embedding SDK (Google Gemini API)
+google-genai==1.5.0
+
