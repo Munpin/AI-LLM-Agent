@@ -1,0 +1,21 @@
+# ============================================================================
+# Fashion Multi-modal RAG Server Dependencies
+# (FastAPI + ChromaDB + CLIP Joint Embedding + Fashionpedia + Google Gemini VLM)
+# ============================================================================
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-multipart==0.0.20
+
+# Vector DB & Multi-Vector Retrieval
+chromadb==0.6.3
+numpy==1.26.4
+Pillow==11.1.0
+
+# Joint Embedding (CLIP) & Dataset (Fashionpedia) - Optional Runtime Accelerators
+open-clip-torch==2.30.0
+datasets==3.2.0
+
+# Google AI API (Gemini LLM & VLM)
+google-genai==1.5.0
+
