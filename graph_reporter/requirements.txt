@@ -1,0 +1,17 @@
+# ============================================================================
+# PressIntel AI — LangGraph Reporter & Boyer-Moore Visualizer Dependencies
+# ============================================================================
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pytz==2024.2
+
+# LangGraph & Google AI (Gemini)
+langgraph==0.2.60
+langchain-core==0.3.28
+langchain-google-genai==2.0.7
+google-genai==1.5.0
+
+# Web Search Tool
+duckduckgo-search==7.2.1
+
